@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+sqlalchemy
+psycopg2-binary
+qdrant-client
+redis
+celery
+torch
+clip-by-openai
+ffmpeg-python
+openai-whisper
+streamlit
+mlflow
+python-dotenv
+pytest
+httpx
