@@ -12,7 +12,7 @@ WHY:  CLIP is the "secret sauce" for multimodal search. Because it was trained o
 """
 
 import torch
-import clip
+import open_clip
 from PIL import Image
 import logging
 from pathlib import Path
@@ -27,7 +27,7 @@ class FrameEmbedder:
     Handles the generation of embeddings for images using CLIP.
     """
 
-    def __init__(self, model_name: str = "ViT-B/32", device: str = None):
+    def __init__(self, model_name: str = "ViT-B-32", device: str = None):
         """
         Initializes the CLIP model.
         
@@ -38,7 +38,12 @@ class FrameEmbedder:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Loading CLIP model {model_name} on {self.device}...")
         
-        self.model, self.preprocess = clip.load(model_name, device=self.device)
+        self.model, _, self.preprocess = open_clip.create_model_and_transforms(
+            model_name, 
+            pretrained='openai', 
+            device=self.device
+        )
+        self.tokenizer = open_clip.get_tokenizer(model_name)
         self.model.eval()
         logger.info("Model loaded successfully.")
 
@@ -93,7 +98,7 @@ class FrameEmbedder:
         Returns:
             A normalized 1D torch.Tensor embedding.
         """
-        text_input = clip.tokenize([text]).to(self.device)
+        text_input = self.tokenizer([text]).to(self.device)
         
         with torch.no_grad():
             text_features = self.model.encode_text(text_input)

@@ -7,7 +7,7 @@ qdrant-client
 redis
 celery
 torch
-clip-by-openai
+open_clip-torch
 ffmpeg-python
 openai-whisper
 streamlit
