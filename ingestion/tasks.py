@@ -14,16 +14,17 @@ from pathlib import Path
 from typing import Optional
 from ingestion.extractor import VideoExtractor
 from ingestion.embedder import FrameEmbedder
+from db.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
-def process_video_ingestion(video_path: str, interval: float = 2.0):
+def process_video_ingestion(video_path: str, interval: float = 2.0, batch_size: int = 32):
     """
     Complete ingestion pipeline for a single video.
     
     1. Extract frames (FFmpeg)
     2. Generate embeddings (CLIP)
-    3. (Future) Store in Qdrant & PostgreSQL
+    3. Store in Qdrant
     """
     logger.info(f"Starting ingestion pipeline for: {video_path}")
     
@@ -37,16 +38,39 @@ def process_video_ingestion(video_path: str, interval: float = 2.0):
     
     # 2. Embedding
     embedder = FrameEmbedder()
-    embeddings = embedder.embed_frames(frame_paths)
+    embeddings = embedder.embed_frames(frame_paths, batch_size=batch_size)
     
-    logger.info(f"Ingestion step 1 & 2 complete for {video_path}.")
-    logger.info(f"Extracted {len(frame_paths)} frames and generated embeddings shape {embeddings.shape}.")
+    # 3. Storage
+    logger.info("Connecting to Qdrant for storage...")
+    store = VectorStore() # Let it use defaults/env variables
+    store.create_collection("video_frames", vector_size=512)
     
-    # 3. Storage (To be implemented in Day 4 & 6)
-    logger.info("Ready for vector storage integration.")
+    # Prepare metadata for each frame
+    metadata = []
+    for i, path in enumerate(frame_paths):
+        # Calculate timestamp: frame 1 is 0s, frame 2 is interval*1s, etc.
+        timestamp = i * interval
+        metadata.append({
+            "video_path": video_path,
+            "frame_path": str(path),
+            "timestamp": timestamp
+        })
+    
+    # Save to Qdrant
+    store.upsert_embeddings("video_frames", embeddings, metadata)
+    
+    logger.info(f"Ingestion complete for {video_path}.")
+    logger.info(f"Extracted {len(frame_paths)} frames and stored in Qdrant.")
     
     return frame_paths, embeddings
 
 if __name__ == "__main__":
-    # This will be used for testing the core logic
-    pass
+    # Test the full pipeline
+    test_video = "data/videos/test_video.mp4"
+    import os
+    
+    if os.path.exists(test_video):
+        # We'll use a 5-second interval for the test to keep it fast
+        process_video_ingestion(test_video, interval=5.0)
+    else:
+        print(f"Test video not found at {test_video}")

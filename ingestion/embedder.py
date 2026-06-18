@@ -47,12 +47,13 @@ class FrameEmbedder:
         self.model.eval()
         logger.info("Model loaded successfully.")
 
-    def embed_frames(self, frame_paths: List[Path]) -> torch.Tensor:
+    def embed_frames(self, frame_paths: List[Path], batch_size: int = 32) -> torch.Tensor:
         """
-        Generates embeddings for a list of image paths.
+        Generates embeddings for a list of image paths using mini-batching.
 
         Args:
             frame_paths: List of Paths to the image files.
+            batch_size: Number of frames to process in a single model pass.
             
         Returns:
             A torch.Tensor of shape (num_frames, embedding_dim).
@@ -60,33 +61,40 @@ class FrameEmbedder:
         if not frame_paths:
             return torch.empty(0)
 
-        logger.info(f"Generating embeddings for {len(frame_paths)} frames...")
+        logger.info(f"Generating embeddings for {len(frame_paths)} frames in batches of {batch_size}...")
         
-        # Load and preprocess all images
-        images = []
-        for path in frame_paths:
-            try:
-                img = self.preprocess(Image.open(path)).unsqueeze(0).to(self.device)
-                images.append(img)
-            except Exception as e:
-                logger.error(f"Error processing {path}: {e}")
+        all_embeddings = []
+        
+        for i in range(0, len(frame_paths), batch_size):
+            batch_paths = frame_paths[i : i + batch_size]
+            batch_images = []
+            
+            for path in batch_paths:
+                try:
+                    img = self.preprocess(Image.open(path)).unsqueeze(0).to(self.device)
+                    batch_images.append(img)
+                except Exception as e:
+                    logger.error(f"Error processing {path}: {e}")
+                    continue
+
+            if not batch_images:
                 continue
 
-        if not images:
+            image_input = torch.cat(batch_images)
+            
+            with torch.no_grad():
+                # Generate image features
+                image_features = self.model.encode_image(image_input)
+                # Normalize embeddings for cosine similarity
+                image_features /= image_features.norm(dim=-1, keepdim=True)
+                all_embeddings.append(image_features.cpu())
+
+        if not all_embeddings:
             return torch.empty(0)
 
-        # Batch process for efficiency
-        image_input = torch.cat(images)
-        
-        with torch.no_grad():
-            # Generate image features
-            image_features = self.model.encode_image(image_input)
-            
-            # Normalize embeddings for cosine similarity
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-            
-        logger.info(f"Embeddings generated. Shape: {image_features.shape}")
-        return image_features
+        final_embeddings = torch.cat(all_embeddings)
+        logger.info(f"Embeddings generated. Final Shape: {final_embeddings.shape}")
+        return final_embeddings
 
     def embed_text(self, text: str) -> torch.Tensor:
         """
