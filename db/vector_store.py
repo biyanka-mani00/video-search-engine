@@ -105,6 +105,41 @@ class VectorStore:
         )
         logger.info(f"Successfully upserted {len(points)} vectors to '{collection_name}'.")
 
+    def search_vectors(
+        self,
+        collection_name: str,
+        query_vector: Union[List[float], np.ndarray, torch.Tensor],
+        limit: int = 5,
+        score_threshold: Optional[float] = None,
+        query_filter: Optional[models.Filter] = None
+    ) -> List[models.ScoredPoint]:
+        """
+        Searches the collection for vectors similar to the query vector.
+        
+        Args:
+            collection_name: Target collection.
+            query_vector: The vector to search with (Tensor, Array, or List).
+            limit: Number of results to return.
+            score_threshold: Minimal score threshold (between 0.0 and 1.0 for cosine).
+            query_filter: Qdrant filter object to restrict search.
+            
+        Returns:
+            A list of ScoredPoint objects from Qdrant.
+        """
+        if isinstance(query_vector, torch.Tensor):
+            query_vector = query_vector.cpu().numpy().tolist()
+        elif isinstance(query_vector, np.ndarray):
+            query_vector = query_vector.tolist()
+
+        response = self.client.query_points(
+            collection_name=collection_name,
+            query=query_vector,
+            limit=limit,
+            score_threshold=score_threshold,
+            query_filter=query_filter
+        )
+        return response.points
+
 if __name__ == "__main__":
     # Test local mode
     store = VectorStore(location=":memory:")

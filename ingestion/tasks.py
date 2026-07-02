@@ -24,13 +24,14 @@ logger = logging.getLogger(__name__)
 def process_video_ingestion(
     video_path: str, 
     interval: float = 2.0, 
-    batch_size: int = 32
+    batch_size: int = 32,
+    video_id: Optional[int] = None
 ) -> Optional[Tuple[List[Path], torch.Tensor]]:
     """
     Complete ingestion pipeline for a single video:
     
     1. Initialize the SQL database schema.
-    2. Create a 'pending' video record in the database.
+    2. Create a 'pending' video record in the database if not already created.
     3. Update status to 'processing' and extract keyframes using FFmpeg.
     4. Generate frame vector embeddings using CLIP.
     5. Save keyframe timestamps and paths to the database.
@@ -42,11 +43,14 @@ def process_video_ingestion(
     # Ensure database schemas are initialized
     init_db()
     
-    # Step 0: Insert Video entry into relational DB
+    # Step 0: Insert Video entry into relational DB if not provided
     title = Path(video_path).stem
+    if video_id is None:
+        with get_db() as db:
+            video = create_video(db, title=title, filepath=video_path)
+            video_id = video.id
+            
     with get_db() as db:
-        video = create_video(db, title=title, filepath=video_path)
-        video_id = video.id
         update_video_status(db, video_id, status="processing")
         
     try:
