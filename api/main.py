@@ -107,6 +107,7 @@ def search_videos(
     threshold: float = Query(default=0.0, ge=0.0, le=1.0, description="Minimum similarity score threshold."),
     video_ids: Optional[List[int]] = Query(default=None, description="Optional list of video IDs to restrict the search to."),
     rerank: bool = Query(default=True, description="Whether to apply temporal deduplication reranking."),
+    rewrite: bool = Query(default=True, description="Whether to apply NLP query rewriting."),
     db: Session = Depends(get_db_session),
     retriever: Retriever = Depends(get_retriever),
     reranker: TemporalReranker = Depends(get_reranker)
@@ -114,11 +115,12 @@ def search_videos(
     """
     Executes a semantic search query against the video collection.
     
-    1. Embeds the search string using the CLIP text encoder.
-    2. Performs vector similarity search in Qdrant (with optional video filter).
-    3. Hydrates the points with video title/path metadata from the relational DB.
-    4. Calculates a ±2s playback window around the matched frame.
-    5. Optionally applies Temporal Non-Maximum Suppression to deduplicate adjacent frames.
+    1. Optionally rewrites conversational queries into visual descriptions (Stage 1).
+    2. Embeds the search string using the CLIP text encoder (Stage 2).
+    3. Performs vector similarity search in Qdrant (with optional video filter).
+    4. Hydrates the points with video title/path metadata from the relational DB.
+    5. Calculates a ±2s playback window around the matched frame.
+    6. Optionally applies Temporal Non-Maximum Suppression to deduplicate adjacent frames.
     """
     query_params = SearchQuery(
         text=q,
@@ -127,8 +129,8 @@ def search_videos(
         video_ids=video_ids
     )
     
-    # Retrieve candidates
-    results = retriever.retrieve(query_params, db=db)
+    # Retrieve candidates (Stage 1 query rewriting + Stage 2 vector search)
+    results = retriever.retrieve(query_params, db=db, rewrite=rewrite)
     
     # Apply temporal deduplication NMS
     if rerank and results:
@@ -151,6 +153,7 @@ def search_videos(
     
     return SearchResponse(
         query=q,
+        rewritten_query=retriever.last_rewritten_query,
         results=formatted_results,
         count=len(formatted_results)
     )

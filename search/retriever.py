@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from db.vector_store import VectorStore
 from db.metadata_store import Video
-from search.query import QueryEncoder, SearchQuery
+from search.query import QueryEncoder, SearchQuery, QueryRewriter
 from qdrant_client.http import models
 from pydantic import BaseModel
 
@@ -50,6 +50,7 @@ class Retriever:
         self,
         vector_store: Optional[VectorStore] = None,
         query_encoder: Optional[QueryEncoder] = None,
+        query_rewriter: Optional[QueryRewriter] = None,
         collection_name: str = "video_frames"
     ):
         """
@@ -58,27 +59,38 @@ class Retriever:
         Args:
             vector_store: Vector store client wrapper.
             query_encoder: Encoder to convert query strings.
+            query_rewriter: Query rewriter to optimize query strings.
             collection_name: Name of Qdrant collection to search.
         """
         self.vector_store = vector_store or VectorStore()
         self.query_encoder = query_encoder or QueryEncoder()
+        self.query_rewriter = query_rewriter or QueryRewriter()
         self.collection_name = collection_name
+        self.last_rewritten_query: Optional[str] = None
 
-    def retrieve(self, query: SearchQuery, db: Session) -> List[SearchResult]:
+    def retrieve(self, query: SearchQuery, db: Session, rewrite: bool = True) -> List[SearchResult]:
         """
         Retrieves matching keyframes from vector store and hydrates with SQL metadata and ±2s clip bounds.
         
         Args:
             query: Validate SearchQuery parameters.
             db: The SQLAlchemy Session.
+            rewrite: Whether to apply NLP query rewriting.
             
         Returns:
             A list of SearchResult objects containing matched frames and clip bounds.
         """
         logger.info(f"Retrieving keyframes for query: '{query.text}'")
         
-        # 1. Encode text query to CLIP vector embedding
-        query_vector = self.query_encoder.encode(query.text)
+        # 1. Stage 1: Query Rewriting
+        search_text = query.text
+        if rewrite:
+            search_text = self.query_rewriter.rewrite(query.text)
+            
+        self.last_rewritten_query = search_text
+        
+        # 2. Stage 2: Vector Search
+        query_vector = self.query_encoder.encode(search_text)
          
         print (f"Encoded query vector: {query_vector[:5]}... (length: {len(query_vector)})")
         

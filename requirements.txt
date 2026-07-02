@@ -15,3 +15,5 @@ mlflow
 python-dotenv
 pytest
 httpx
+google-genai
+python-docx

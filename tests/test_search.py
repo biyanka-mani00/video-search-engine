@@ -11,7 +11,7 @@ from api.main import app
 from api.deps import get_db_session, get_retriever, get_reranker
 from db.metadata_store import Base, Video, Keyframe
 from db.vector_store import VectorStore
-from search.query import SearchQuery, QueryEncoder
+from search.query import SearchQuery, QueryEncoder, QueryRewriter
 from search.retriever import Retriever, SearchResult
 from search.reranker import TemporalReranker
 
@@ -153,6 +153,7 @@ class TestAPISearch(unittest.TestCase):
         self.app.dependency_overrides[get_reranker] = lambda: mock_reranker
         
         # Setup mock return values
+        mock_retriever.last_rewritten_query = "running dog"
         mock_retriever.retrieve.return_value = [
             SearchResult(
                 video_id=1, video_title="V1", video_path="v1.mp4", 
@@ -291,6 +292,40 @@ class TestAPIIntegration(unittest.TestCase):
         self.assertGreater(first_result["score"], 0.0)
         self.assertEqual(first_result["clip_start"], max(0.0, first_result["timestamp"] - 2.0))
         self.assertEqual(first_result["clip_end"], min(video_record.duration, first_result["timestamp"] + 2.0))
+
+
+class TestQueryRewriter(unittest.TestCase):
+    def test_rule_based_fallback(self):
+        rewriter = QueryRewriter(api_key="")  # Force fallback
+        
+        # Test 1: Conversational start stripped and action verb appended
+        result1 = rewriter.rewrite("When did a couple appear?")
+        self.assertEqual(result1, "a couple appearing")
+        
+        # Test 2: 'show me' stripped
+        result2 = rewriter.rewrite("Show me a red sports car")
+        self.assertEqual(result2, "a red sports car")
+        
+        # Test 3: plain phrase remains unchanged
+        result3 = rewriter.rewrite("a dog running")
+        self.assertEqual(result3, "a dog running")
+
+    @patch('google.genai.Client')
+    def test_gemini_api_integration(self, mock_client_class):
+        # Mock client instance and models service
+        mock_client = MagicMock()
+        mock_client_class.return_value = mock_client
+        
+        mock_response = MagicMock()
+        mock_response.text = " a couple appearing "
+        mock_client.models.generate_content.return_value = mock_response
+        
+        rewriter = QueryRewriter(api_key="fake-key")
+        result = rewriter.rewrite("When did the couple appear?")
+        
+        self.assertEqual(result, "a couple appearing")
+        mock_client_class.assert_called_once_with(api_key="fake-key")
+        mock_client.models.generate_content.assert_called_once()
 
 
 if __name__ == '__main__':

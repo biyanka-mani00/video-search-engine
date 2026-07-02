@@ -48,6 +48,7 @@ class SearchResponse(BaseModel):
     """
     Schema representing the complete search query response.
     """
-    query: str = Field(..., description="The search query text.")
+    query: str = Field(..., description="The original search query text.")
+    rewritten_query: Optional[str] = Field(default=None, description="The rewritten visual search query text.")
     results: List[SearchResultResponse] = Field(..., description="List of matching search results.")
     count: int = Field(..., description="Number of results returned.")
